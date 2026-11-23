@@ -1,0 +1,14 @@
+# build
+/target/
+# runtime data (models are GBs, state holds local paths)
+/models/
+/installs/
+/logs/
+/run/
+/cache/
+/export/
+/routers/
+/state.json
+/bench.jsonl
+# agent worktrees
+/.claude/

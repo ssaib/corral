@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: fmt
+        if: runner.os == 'Linux' # rustfmt formats every cfg branch: once is enough
+        run: cargo fmt --check
+      - run: cargo build --locked
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: smoke test
+        run: |
+          out=$(cargo run --locked -q -- --help)
+          [[ $out == *"uso: corral"* ]]
+          code=0; cargo run --locked -q -- --bogus > /dev/null || code=$?
+          test "$code" -eq 2
+          code=0; cargo run --locked -q < /dev/null > /dev/null || code=$? # no terminal: refuses, exit 1
+          test "$code" -eq 1
+          # the commands work without a terminal; an empty data folder has no servers
+          export CORRAL_HOME="$RUNNER_TEMP/corral-smoke"
+          [[ $(cargo run --locked -q -- status) == "nessun server attivo" ]]
+          [[ $(cargo run --locked -q -- status --json) == *'"servers": []'* ]] # what another computer reads
+          [[ $(cargo run --locked -q -- models --json) == *'"profiles": []'* ]]
+          code=0; cargo run --locked -q -- start > /dev/null 2>&1 || code=$? # no model named: usage, exit 2
+          test "$code" -eq 2
+
+  coverage: # every screen and command against the fakes of src/fake.rs; fails under the floor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - run: cargo llvm-cov --locked --ignore-filename-regex 'fake\.rs' --fail-under-lines 85 --summary-only
+
+  msrv: # the rust-version promised in Cargo.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+      - run: cargo check --locked --all-targets
